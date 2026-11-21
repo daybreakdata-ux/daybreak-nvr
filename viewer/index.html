@@ -1,0 +1,550 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#001119">
+<title>Daybreak NVR</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png">
+<style>
+  /* Shield+ Beta palette: navy backgrounds, near-black hero cards,
+     teal primary accent, lime highlights, orange for Offline.
+     Light theme is the same scheme lightened (pale navy-grey page,
+     teal primary, lime highlights). Dark is the default. */
+  :root {
+    --bg:#121212; --card:#050607; --line:#22343f; --text:#e9f1f3;
+    --dim:#8ba3ad; --accent:#168573; --accent-soft:#0b2f2b;
+    --navy:#168573; --live:#B2C13A; --warn:#ed8a00; --danger:#f26d6d;
+    --shadow:0 1px 3px rgba(0,0,0,.5), 0 4px 14px rgba(0,0,0,.35);
+    --radius:14px;
+  }
+  [data-theme="light"] {
+    --bg:#edf1f3; --card:#ffffff; --line:#d9e2e6; --text:#12242d;
+    --dim:#61777f; --accent:#168573; --accent-soft:#dff0ec;
+    --navy:#168573; --live:#8a9a1f; --warn:#ed8a00; --danger:#d92d20;
+    --shadow:0 1px 3px rgba(16,42,67,.08), 0 4px 14px rgba(16,42,67,.06);
+  }
+  * { box-sizing:border-box; margin:0; }
+  html, body { min-height:100%; }
+  body { background:var(--bg); color:var(--text);
+         font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+         min-height:100vh; padding-bottom:calc(64px + env(safe-area-inset-bottom)); }
+  button { font-family:inherit; }
+  .hidden { display:none !important; }
+
+  /* ---- Top bar (Home-style, persistent) ---- */
+  #topbar { display:flex; align-items:center; gap:6px;
+            padding:calc(10px + env(safe-area-inset-top)) 16px 10px;
+            position:sticky; top:0; background:var(--bg); z-index:20; }
+  #homeBtn { display:flex; align-items:center; gap:4px; background:none;
+             border:none; color:var(--text); font-size:19px; font-weight:700;
+             cursor:pointer; padding:6px 2px; flex:1; text-align:left; }
+  #homeBtn svg { width:15px; height:15px; color:var(--dim); }
+  .iconbtn { background:var(--card); border:1px solid var(--line);
+             border-radius:50%; width:40px; height:40px; display:flex;
+             align-items:center; justify-content:center; cursor:pointer;
+             color:var(--text); box-shadow:var(--shadow); position:relative; flex:none; }
+  .iconbtn svg { width:21px; height:21px; display:block; }
+
+  /* ---- Views ---- */
+  main { padding:4px 16px 16px; max-width:1100px; margin:0 auto; }
+  .viewhead { display:flex; align-items:center; gap:10px; margin:6px 0 12px; flex-wrap:wrap; }
+  .viewhead h2 { font-size:20px; font-weight:700; flex:1; }
+  .viewhead .spacer { flex:1; }
+  .seg { display:flex; border:1px solid var(--line); border-radius:10px;
+         overflow:hidden; background:var(--card); }
+  .seg button { background:var(--card); border:none; color:var(--text);
+    padding:8px 13px; font-size:14px; cursor:pointer; }
+  .seg button.active { background:var(--accent); color:#fff; font-weight:600; }
+  .btn { background:var(--card); color:var(--text); border:1px solid var(--line);
+         border-radius:10px; padding:9px 13px; font-size:14px; cursor:pointer; }
+  .btn.primary { background:var(--navy); border-color:var(--navy); color:#fff; font-weight:600; }
+  .btn.accent { background:var(--accent); border-color:var(--accent); color:#fff; font-weight:600; }
+
+  /* ---- Filter chips ---- */
+  .chips { display:flex; gap:8px; overflow-x:auto; padding:2px 0 12px;
+           scrollbar-width:none; }
+  .chips::-webkit-scrollbar { display:none; }
+  .chip { background:var(--card); border:1px solid var(--line); color:var(--dim);
+          border-radius:999px; padding:7px 15px; font-size:14px; cursor:pointer;
+          white-space:nowrap; flex:none; }
+  .chip.active { background:var(--accent); border-color:var(--accent);
+                 color:#fff; font-weight:600; }
+  .viewtoggle { margin-left:auto; }
+
+  /* ---- Home camera cards: live video tiles, name/live overlaid ----
+     Same treatment as the grid tiles: the video cover-fills the card
+     edge-to-edge, the name + live dot sit on the video itself. */
+  #homeGrid { display:grid; gap:12px; grid-template-columns:repeat(2,1fr); }
+  #homeGrid.list { grid-template-columns:1fr; }
+  .devcard { background:var(--card); border:1px solid var(--line);
+             border-radius:var(--radius); box-shadow:var(--shadow);
+             cursor:pointer; position:relative; overflow:hidden;
+             padding:0; aspect-ratio:16/9; }
+  .devcard .frame { position:absolute; inset:0; background:#000; }
+  .devcard video { width:100%; height:100%; object-fit:cover; display:block; }
+  .devcard .fav { position:absolute; top:10px; right:10px; z-index:2;
+             background:rgba(0,0,0,.45); border:none; border-radius:50%;
+             width:32px; height:32px; display:flex; align-items:center;
+             justify-content:center; cursor:pointer; color:#fff; padding:0; }
+  .devcard .fav svg { width:19px; height:19px; }
+  .devcard .fav.on { color:var(--live); }
+  /* List mode: compact row — small video thumb, text beside it. */
+  #homeGrid.list .devcard { display:flex; flex-direction:row; align-items:center;
+             gap:12px; aspect-ratio:auto; min-height:0; padding:10px 12px; }
+  #homeGrid.list .devcard .frame { position:relative; inset:auto; width:112px;
+             flex:none; aspect-ratio:16/9; border-radius:9px; overflow:hidden; }
+  #homeGrid.list .devcard .tiletag { position:static; background:none;
+             padding:0; color:var(--text); flex:1; min-width:0; }
+  #homeGrid.list .devcard .tiletag .name { color:var(--text); text-shadow:none; }
+  #homeGrid.list .devcard .tiletag .state { color:var(--dim); text-shadow:none; }
+  #homeGrid.list .devcard .tiletag .state.off { color:var(--warn); }
+  #homeGrid.list .devcard .fav { position:static; background:none; color:var(--dim); flex:none; }
+  #homeGrid.list .devcard .fav.on { color:var(--live); }
+
+  /* ---- Section headings ---- */
+  .section { font-size:13px; font-weight:700; color:var(--dim);
+             text-transform:uppercase; letter-spacing:.4px; margin:18px 0 10px; }
+
+  /* ---- Live grid (Cameras tab) ----
+     Tiles are 16:9 by width in normal flow. The video cover-fills the
+     tile edge-to-edge (cropping, never letterboxing) and the name +
+     live dot are overlaid on the video itself — there is no separate
+     label bar and no dead space. When rows are stretched (landscape
+     2x2, or the grid in fullscreen) the tile stretches and the video
+     still fills it, because the frame is pinned to the tile edges. */
+  #grid { display:grid; gap:12px; grid-template-columns:repeat(auto-fill,minmax(300px,1fr)); }
+  #grid.layout-1 { grid-template-columns:1fr; }
+  #grid.layout-4 { grid-template-columns:repeat(2,1fr); }
+  @media (orientation:landscape) {
+    body[data-layout="4"] #grid.layout-4 {
+      height:calc(100dvh - 170px); grid-template-rows:1fr 1fr; }
+    body[data-layout="4"] #grid.layout-4 .tile { aspect-ratio:auto; }
+  }
+  /* Grid fullscreen: the 2x2 fills the viewport in either orientation. */
+  body[data-layout="4"] #grid.layout-4:fullscreen {
+    height:100dvh; grid-template-rows:1fr 1fr; }
+  body[data-layout="4"] #grid.layout-4:fullscreen .tile { aspect-ratio:auto; }
+  .tile { background:var(--card); border:1px solid var(--line);
+          border-radius:var(--radius); overflow:hidden; cursor:pointer;
+          box-shadow:var(--shadow); position:relative; aspect-ratio:16/9; }
+  .tile .frame { position:absolute; inset:0; background:#000; }
+  .tile video { width:100%; height:100%; object-fit:cover; display:block; }
+  /* Name + live dot overlaid on the video (shared with Home cards). */
+  .tiletag { position:absolute; left:0; right:0; bottom:0; z-index:1;
+             display:flex; align-items:center; gap:8px;
+             padding:22px 12px 9px; color:#fff; pointer-events:none;
+             background:linear-gradient(transparent, rgba(0,0,0,.6)); }
+  .tiletag .name { font-weight:600; font-size:15px; flex:1; min-width:0;
+             white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+             text-shadow:0 1px 3px rgba(0,0,0,.7); }
+  .tiletag .state { color:rgba(255,255,255,.85); font-size:12.5px; flex:none;
+             text-shadow:0 1px 3px rgba(0,0,0,.7); }
+  .tiletag .state.off { color:var(--warn); }
+  .dot { width:9px; height:9px; border-radius:50%; background:var(--dim); flex:none; }
+  .dot.live { background:var(--live); box-shadow:0 0 7px var(--live); }
+
+  /* ---- Live view ---- */
+  #liveWrap { max-width:1100px; margin:0 auto; }
+  #liveBack { background:none; border:none; color:var(--accent); font-size:15px;
+              font-weight:600; cursor:pointer; padding:6px 0; }
+  .videobox { position:relative; background:#000; border-radius:var(--radius);
+              overflow:hidden; aspect-ratio:16/9; margin-top:6px; }
+  .videobox video { width:100%; height:100%; object-fit:contain; display:block; }
+  .videobox .overlay { position:absolute; inset:0; display:flex;
+              flex-direction:column; justify-content:space-between;
+              padding:10px 12px; background:linear-gradient(rgba(0,0,0,.35), transparent 30%, transparent 65%, rgba(0,0,0,.45));
+              opacity:0; pointer-events:none; transition:opacity .2s; }
+  .videobox.show-ctl .overlay { opacity:1; pointer-events:auto; }
+  .overlay .top { display:flex; align-items:center; gap:8px; color:#fff; }
+  .overlay .badge { background:rgba(0,0,0,.55); border-radius:6px; padding:4px 8px;
+              font-size:12.5px; font-weight:600; }
+  .overlay .badge.live { color:var(--live); }
+  .overlay .top .spacer { flex:1; }
+  .overlay .gear { background:rgba(0,0,0,.55); color:#fff; border:none;
+              border-radius:50%; width:36px; height:36px; cursor:pointer;
+              display:flex; align-items:center; justify-content:center; }
+  .overlay .gear svg { width:20px; height:20px; }
+  .overlay .bottom { display:flex; justify-content:center; gap:18px; }
+  .overlay .ctl { background:rgba(0,0,0,.55); color:#fff; border:none;
+              border-radius:10px; padding:7px 10px; cursor:pointer;
+              display:flex; flex-direction:column; align-items:center; gap:3px;
+              font-size:11px; min-width:56px; }
+  .overlay .ctl svg { width:20px; height:20px; }
+  .ctlrow { display:flex; gap:10px; margin-top:12px; flex-wrap:wrap; }
+  .ctlbtn { flex:1; min-width:100px; background:var(--card); border:1px solid var(--line);
+            border-radius:12px; padding:12px 6px; cursor:pointer; color:var(--text);
+            display:flex; flex-direction:column; align-items:center; gap:6px;
+            font-size:13px; font-weight:600; box-shadow:var(--shadow); }
+  .ctlbtn svg { width:22px; height:22px; color:var(--accent); }
+  .ctlbtn small { font-weight:400; color:var(--dim); font-size:11.5px; }
+  #liveStatus { color:var(--dim); font-size:13px; margin-top:10px; }
+  #liveToast { color:var(--warn); font-size:13px; margin-top:6px; min-height:17px; }
+
+  /* ---- Playback ---- */
+  .pbtabs { display:flex; border:1px solid var(--line); border-radius:10px;
+            overflow:hidden; background:var(--card); }
+  .pbtabs button { background:var(--card); border:none; color:var(--text);
+            padding:8px 18px; font-size:14px; cursor:pointer; }
+  .pbtabs button.active { background:var(--accent); color:#fff; font-weight:600; }
+  #pb-controls { display:flex; gap:10px; flex-wrap:wrap; margin:12px 0; }
+  #pb-controls select, #pb-controls input { background:var(--card); color:var(--text);
+    border:1px solid var(--line); border-radius:10px; padding:9px 11px; font-size:14.5px; }
+  #pb-player video { width:100%; max-height:56vh; background:#000;
+    border-radius:var(--radius); display:block; }
+  #pb-transport { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-top:10px; }
+  #pb-transport .btn { padding:8px 12px; }
+  #pb-jump { display:flex; gap:8px; align-items:center; }
+  #pb-jump input { background:var(--card); color:var(--text); border:1px solid var(--line);
+    border-radius:10px; padding:8px 10px; font-size:14px; width:110px; }
+  #pb-status { color:var(--dim); font-size:13px; margin-top:8px; min-height:17px; }
+  /* 24h timeline: teal = recorded segments (continuous recording). */
+  #pb-timeline { position:relative; height:44px; background:var(--card);
+    border:1px solid var(--line); border-radius:10px; margin-top:12px;
+    cursor:pointer; overflow:hidden; touch-action:none; }
+  #pb-timeline .seg-block { position:absolute; top:8px; bottom:8px;
+    background:var(--accent); border-radius:4px; opacity:.85; }
+  #pb-timeline .now-line { position:absolute; top:0; bottom:0; width:2px;
+    background:var(--navy); display:none; }
+  #pb-timeline .scrub-tip { position:absolute; top:-2px; transform:translateX(-50%);
+    background:var(--navy); color:#fff; font-size:11px; padding:2px 7px;
+    border-radius:6px; display:none; white-space:nowrap; z-index:2; }
+  #pb-hours { display:flex; justify-content:space-between; color:var(--dim);
+    font-size:11px; margin-top:4px; }
+  .clip { background:var(--card); border:1px solid var(--line); border-radius:12px;
+          padding:12px 14px; margin-bottom:10px; cursor:pointer; box-shadow:var(--shadow); }
+  .clip.active { border-color:var(--accent); }
+  .clip-main { display:flex; gap:10px; align-items:center; }
+  .clip-thumb { width:40px; height:40px; border-radius:9px; background:var(--accent-soft);
+    color:var(--accent); display:flex; align-items:center; justify-content:center; flex:none; }
+  .clip-thumb svg { width:22px; height:22px; }
+  .clip-name { font-weight:600; font-size:15px; flex:1; min-width:0;
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .clip-meta { color:var(--dim); font-size:13px; white-space:nowrap; }
+  .clip-status { color:var(--dim); font-size:13px; margin-top:4px;
+    display:flex; align-items:center; gap:8px; }
+  .clip-status .stext { flex:1; min-width:0; }
+  .clip.active .clip-status { color:var(--accent); }
+  .clip .dl { background:none; border:none; color:var(--accent); cursor:pointer;
+    padding:6px; flex:none; }
+  .clip .dl svg { width:20px; height:20px; }
+  .clip .del { background:none; border:1px solid var(--line); color:var(--danger);
+    border-radius:8px; padding:6px 10px; font-size:13px; font-weight:600;
+    cursor:pointer; flex:none; }
+  .clip .del.armed { background:var(--danger); border-color:var(--danger); color:#fff; }
+  .clip .del:disabled { opacity:.6; cursor:default; }
+  .clip input[type="checkbox"] { width:18px; height:18px; accent-color:var(--accent); flex:none; }
+  #pb-empty { color:var(--dim); text-align:center; padding:6vh 20px; font-size:15px; }
+
+  /* ---- Loading states (no placeholder graphic) ----
+     While a feed isn't rendering yet the tile is covered by an
+     opaque overlay with a lightweight CSS-only animation — never
+     a play-button placeholder. Two visibly different states:
+     Connecting… = waking the camera (teal pulsing radar ring),
+     Loading… = stream started, waiting for first frames
+     (lime spinner). Hidden the moment frames render. */
+  .loadstate { position:absolute; inset:0; z-index:1; display:flex;
+    flex-direction:column; align-items:center; justify-content:center; gap:12px;
+    background:#000; pointer-events:none; }
+  .loadstate.off { display:none; }
+  .loadstate .loadlabel { color:#e9f1f3; font-size:13.5px; font-weight:600;
+    text-shadow:0 1px 3px rgba(0,0,0,.7); }
+  .loadstate.connecting .loadanim { width:46px; height:46px; border-radius:50%;
+    background:var(--accent); position:relative;
+    animation:radar-pulse 1.6s ease-out infinite; }
+  .loadstate.connecting .loadanim::after { content:""; position:absolute; inset:13px;
+    border-radius:50%; background:#001119; }
+  @keyframes radar-pulse {
+    0% { box-shadow:0 0 0 0 rgba(22,133,115,.55); }
+    100% { box-shadow:0 0 0 20px rgba(22,133,115,0); } }
+  .loadstate.loading .loadanim { width:38px; height:38px; border-radius:50%;
+    border:4px solid rgba(178,193,58,.25); border-top-color:var(--live);
+    animation:load-spin .9s linear infinite; }
+  @keyframes load-spin { to { transform:rotate(360deg); } }
+
+  /* ---- Me ---- */
+  .merow { background:var(--card); border:1px solid var(--line); border-radius:12px;
+           padding:14px 16px; margin-bottom:10px; display:flex; align-items:center;
+           gap:12px; box-shadow:var(--shadow); }
+  .merow .lbl { flex:1; }
+  .merow .lbl b { display:block; font-size:15px; }
+  .merow .lbl span { color:var(--dim); font-size:13px; }
+  .merow.danger .lbl b { color:var(--danger); }
+  .merow button.rowbtn { background:none; border:none; color:var(--accent);
+           font-size:15px; font-weight:600; cursor:pointer; }
+
+  /* ---- Bottom nav ---- */
+  #bottomnav { position:fixed; left:0; right:0; bottom:0; z-index:20;
+    background:var(--card); border-top:1px solid var(--line);
+    display:flex; padding-bottom:env(safe-area-inset-bottom); box-shadow:0 -2px 12px rgba(16,42,67,.07); }
+  #bottomnav button { flex:1; background:none; border:none; cursor:pointer;
+    color:var(--dim); padding:8px 0 7px; display:flex; flex-direction:column;
+    align-items:center; gap:3px; font-size:11.5px; }
+  #bottomnav button svg { width:23px; height:23px; }
+  #bottomnav button.active { color:var(--accent); font-weight:600; }
+
+  /* ---- Sheets / popovers ---- */
+  .sheet-back { position:fixed; inset:0; background:rgba(10,25,40,.45); z-index:40;
+    display:flex; align-items:flex-end; justify-content:center; }
+  .sheet { background:var(--card); color:var(--text); border-radius:18px 18px 0 0;
+    width:100%; max-width:560px; padding:18px 20px calc(20px + env(safe-area-inset-bottom));
+    max-height:75vh; overflow-y:auto; }
+  .sheet h3 { font-size:17px; margin-bottom:10px; }
+  .sheet p { color:var(--dim); font-size:14.5px; line-height:1.5; margin-bottom:10px; }
+  .sheet .row { display:flex; justify-content:space-between; align-items:center;
+    padding:12px 0; border-top:1px solid var(--line); font-size:15px; }
+  .sheet .close { width:100%; margin-top:12px; padding:12px; border:none;
+    border-radius:10px; background:var(--accent); color:#fff; font-size:15px;
+    font-weight:600; cursor:pointer; }
+
+  /* ---- Login ---- */
+  #login { max-width:360px; margin:10vh auto 0; background:var(--card);
+           border:1px solid var(--line); border-radius:18px; padding:26px 24px;
+           box-shadow:var(--shadow); }
+  #login h2 { font-size:20px; margin-bottom:4px; }
+  #login p { color:var(--dim); font-size:13.5px; margin-bottom:16px; line-height:1.5; }
+  #login label { display:block; font-size:13px; color:var(--dim); margin:12px 0 5px; }
+  #login input { width:100%; padding:11px; border-radius:10px; font-size:15px;
+                 border:1px solid var(--line); background:var(--bg); color:var(--text); }
+  #login button { width:100%; margin-top:18px; padding:13px; border:none;
+                  border-radius:10px; background:var(--navy); color:#fff;
+                  font-size:15px; font-weight:600; cursor:pointer; }
+  #loginErr { color:var(--danger); font-size:13px; margin-top:10px; min-height:16px; }
+  #login .remember { display:flex; align-items:center; gap:8px; font-size:14px;
+    color:var(--text); margin:14px 0 0; cursor:pointer; }
+  #login .remember input { width:17px; height:17px; accent-color:var(--accent); }
+
+  /* v1.4: snapshot thumbnails + kind icons in clip rows. */
+  .clip-thumb { overflow:hidden; }
+  .clip-thumb img { width:100%; height:100%; object-fit:cover; display:block; }
+  .clip-kind { font-size:15px; flex:none; }
+
+  /* v1.4: single-camera "Playback & Download" recap card. Portrait
+     only — hidden in landscape so it never crowds the video. */
+  #liveRecap { background:var(--card); border:1px solid var(--line);
+    border-radius:var(--radius); padding:14px; margin-top:12px; box-shadow:var(--shadow); }
+  @media (orientation:landscape) { #liveRecap { display:none; } }
+  .recap-head { display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; }
+  .recap-head > span { font-weight:700; font-size:15px; }
+  .recap-head button { background:none; border:none; color:var(--accent);
+    font-size:14px; font-weight:600; cursor:pointer; padding:0; }
+  .recap-strip { display:flex; gap:10px; overflow-x:auto; scrollbar-width:none; padding-bottom:2px; }
+  .recap-strip::-webkit-scrollbar { display:none; }
+  .recap-item { position:relative; flex:none; width:132px; aspect-ratio:16/9;
+    border:none; border-radius:10px; overflow:hidden; padding:0; cursor:pointer; background:#000; }
+  .recap-thumb { position:absolute; inset:0; display:flex; align-items:center;
+    justify-content:center; background:var(--accent-soft); color:var(--accent); }
+  .recap-thumb img { width:100%; height:100%; object-fit:cover; display:block; }
+  .recap-thumb svg { width:24px; height:24px; }
+  .recap-time { position:absolute; left:0; right:0; bottom:0; padding:12px 6px 4px;
+    font-size:11px; color:#fff; text-align:left; white-space:nowrap; overflow:hidden;
+    text-overflow:ellipsis; background:linear-gradient(transparent, rgba(0,0,0,.65)); }
+  .recap-dur { position:absolute; top:6px; right:6px; background:rgba(0,0,0,.6);
+    color:#fff; font-size:11px; padding:2px 6px; border-radius:6px; }
+  .recap-activity { color:var(--dim); font-size:13px; margin-top:10px; }
+  #empty { color:var(--dim); text-align:center; padding:9vh 20px; font-size:15px;
+           line-height:1.55; }
+</style>
+</head>
+<body>
+  <form id="login" class="hidden" autocomplete="on">
+    <h2>Sign in</h2>
+    <p>Sign in with your NVR account — the username and password set up in the NVR app on your PC.</p>
+    <label for="user">Username</label>
+    <input id="user" name="username" autocomplete="username" required>
+    <label for="pass">Password</label>
+    <input id="pass" name="password" type="password" autocomplete="current-password" required>
+    <label class="remember"><input id="remember" type="checkbox"> Remember me</label>
+    <button type="submit">Sign in</button>
+    <div id="loginErr"></div>
+  </form>
+
+  <div id="app" class="hidden">
+    <header id="topbar">
+      <button id="homeBtn" type="button">My home
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+      </button>
+      <button id="bellBtn" class="iconbtn" type="button" aria-label="Notifications">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg>
+      </button>
+      <button id="plusBtn" class="iconbtn" type="button" aria-label="Add device">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+      </button>
+    </header>
+
+    <main>
+      <!-- Home: live video tiles, name/live overlaid on the video -->
+      <section id="view-home">
+        <div class="chips" id="homeChips">
+          <button class="chip active" data-filter="all" type="button">All</button>
+          <button class="chip" data-filter="fav" type="button">Favorite</button>
+          <button class="chip viewtoggle" id="homeLayoutBtn" type="button" title="Switch list / grid view">☰ List view</button>
+        </div>
+        <div class="section">Cameras</div>
+        <div id="homeGrid"></div>
+        <div id="homeEmpty" class="hidden">No cameras yet.<br>
+          Add your cameras in the NVR app on your PC — and make sure Remote viewing is on there — they'll show up here on their own.</div>
+      </section>
+
+      <!-- Cameras: live grid / multi-view -->
+      <section id="view-cameras" class="hidden">
+        <div class="viewhead">
+          <h2>Cameras</h2>
+          <div class="seg" role="group" aria-label="Grid layout">
+            <button data-layout="auto" class="active" type="button">Auto</button>
+            <button data-layout="1" type="button">1</button>
+            <button data-layout="4" type="button">4</button>
+          </div>
+          <button id="fs" class="btn" type="button">⛶ Fullscreen</button>
+        </div>
+        <div id="grid"></div>
+        <div id="empty" class="hidden">No cameras yet.<br>
+          Add your cameras in the NVR app on your PC — and make sure Remote viewing is on there — they'll show up here on their own. Cameras take a few seconds to wake when you open this page.</div>
+      </section>
+
+      <!-- Live view: one camera -->
+      <section id="view-live" class="hidden">
+        <div id="liveWrap">
+          <button id="liveBack" type="button">← Back</button>
+          <div class="videobox" id="liveBox">
+            <video id="live-video" muted playsinline autoplay></video>
+            <div class="loadstate connecting" id="liveLoad">
+              <span class="loadanim"></span><span class="loadlabel">Connecting…</span>
+            </div>
+            <div class="overlay" id="liveOverlay">
+              <div class="top">
+                <span class="badge live" id="liveBadge">● LIVE</span>
+                <span class="badge" id="liveName"></span>
+                <span class="spacer"></span>
+                <button class="gear" id="liveGear" type="button" aria-label="Camera settings">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+                </button>
+              </div>
+              <div class="bottom">
+                <button class="ctl" id="ctlShot" type="button">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+                  Screenshot</button>
+                <button class="ctl" id="ctlMulti" type="button">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg>
+                  Multi-Screen</button>
+                <button class="ctl" id="ctlFs" type="button">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg>
+                  Full Screen</button>
+                <button class="ctl" id="ctlMute" type="button">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/></svg>
+                  <span id="ctlMuteLabel">Muted</span></button>
+              </div>
+            </div>
+          </div>
+          <div class="ctlrow">
+            <button class="ctlbtn" id="btnMulti" type="button">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg>
+              Multi-Screen<small>Watch up to 4 at once</small></button>
+            <button class="ctlbtn" id="btnPlayback" type="button">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg>
+              Playback &amp; Download<small>Recorded clips</small></button>
+            <button class="ctlbtn" id="btnShot" type="button">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+              Screenshot<small>Save a still image</small></button>
+          </div>
+          <div id="liveStatus">Connecting…</div>
+          <div id="liveToast"></div>
+          <div id="liveRecap" class="hidden"></div>
+        </div>
+      </section>
+
+      <!-- Playback -->
+      <section id="view-playback" class="hidden">
+        <div class="viewhead">
+          <h2>Playback</h2>
+          <div class="pbtabs" role="group" aria-label="Playback tabs">
+            <button data-pbtab="play" class="active" type="button">Playback</button>
+            <button data-pbtab="download" type="button">Download</button>
+          </div>
+        </div>
+        <div id="pb-controls">
+          <select id="pb-camera" aria-label="Camera">
+            <option value="">All cameras</option>
+          </select>
+          <input id="pb-date" type="date" aria-label="Date">
+        </div>
+        <div id="pb-play-tab">
+          <div id="pb-player" class="hidden">
+            <video id="pb-video" controls muted preload="metadata" playsinline></video>
+            <div id="pb-transport">
+              <button class="btn" id="pb-back10" type="button">−10s</button>
+              <button class="btn" id="pb-fwd10" type="button">+10s</button>
+              <button class="btn" id="pb-speed" type="button">Speed 1×</button>
+              <button class="btn" id="pb-mute" type="button">🔇 Muted</button>
+              <span id="pb-jump">
+                <input id="pb-jump-time" type="time" step="1" aria-label="Jump to time">
+                <button class="btn" id="pb-jump-go" type="button">Jump to time</button>
+              </span>
+            </div>
+            <div id="pb-status"></div>
+            <div id="pb-timeline" aria-label="24 hour recording timeline">
+              <div class="scrub-tip" id="pb-tip"></div>
+              <div class="now-line" id="pb-now"></div>
+            </div>
+            <div id="pb-hours"><span>12 AM</span><span>6 AM</span><span>12 PM</span><span>6 PM</span><span>12 AM</span></div>
+          </div>
+          <div class="section">Recordings</div>
+          <div id="pb-list"></div>
+          <div id="pb-empty" class="hidden">No clips for this camera and date.</div>
+        </div>
+        <div id="pb-download-tab" class="hidden">
+          <div class="ctlrow" style="margin:0 0 12px">
+            <button class="btn accent" id="pb-dl-selected" type="button">Download selected</button>
+          </div>
+          <div id="pb-dl-list"></div>
+          <div id="pb-dl-empty" class="hidden">No clips for this camera and date.</div>
+        </div>
+      </section>
+
+      <!-- Me -->
+      <section id="view-me" class="hidden">
+        <div class="viewhead"><h2>Me</h2></div>
+        <div class="merow"><div class="lbl"><b>Appearance</b><span>Light, dark, or follow your device</span></div>
+          <div class="seg" id="themeSeg" role="group" aria-label="Appearance">
+            <button data-theme="light" type="button">Light</button>
+            <button data-theme="dark" type="button">Dark</button>
+            <button data-theme="system" type="button">System</button>
+          </div>
+        </div>
+        <div class="merow"><div class="lbl"><b id="meUser">Signed in</b><span id="meRole"></span></div></div>
+        <div class="merow"><div class="lbl"><b>Viewer</b><span>Remote viewer v1.0</span></div></div>
+        <div class="merow danger"><div class="lbl"><b>Sign out</b><span>Forget the saved sign-in on this device</span></div>
+          <button class="rowbtn" id="signout" type="button">Sign out</button></div>
+      </section>
+    </main>
+
+    <nav id="bottomnav" aria-label="Main">
+      <button data-nav="home" class="active" type="button">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+        Home</button>
+      <button data-nav="cameras" type="button">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+        Cameras</button>
+      <button data-nav="playback" type="button">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg>
+        Playback</button>
+      <button data-nav="me" type="button">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+        Me</button>
+    </nav>
+  </div>
+
+  <!-- Bottom sheets -->
+  <div id="sheetBack" class="sheet-back hidden">
+    <div class="sheet" role="dialog" aria-modal="true">
+      <h3 id="sheetTitle"></h3>
+      <div id="sheetBody"></div>
+      <button class="close" id="sheetClose" type="button">Close</button>
+    </div>
+  </div>
+
+<script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.18/dist/hls.min.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
